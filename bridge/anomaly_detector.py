@@ -27,12 +27,11 @@ Usage:
     # Returns list of Anomaly objects with type, severity, and narrative
 """
 
-import math
 import time
 import statistics
 from dataclasses import dataclass, field
 from collections import deque
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from enum import Enum
 
 

@@ -20,10 +20,10 @@ import os
 import json
 import threading
 import statistics
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from collections import deque
 from typing import Optional, Callable, List
-from anomaly_detector import AnomalyDetector, Anomaly
+from anomaly_detector import AnomalyDetector
 from pathlib import Path
 from datetime import datetime
 

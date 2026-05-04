@@ -170,19 +170,27 @@ def bench_e2e_pipeline(n_lines: int = 50) -> Dict[str, Any]:
     """
     True end-to-end: write lines to a temp log, measure time until
     bridge fires callback for the last line.
+
+    Cross-platform fix:
+    - Removed hardcoded Linux-only /tmp
+    - Uses system default temp directory automatically
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".log",
-                                     delete=False, dir="/tmp") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".log",
+        delete=False
+    ) as f:
         log_path = f.name
 
     latencies = []
-    done      = threading.Event()
-    write_ts  = [0.0]
+    done = threading.Event()
+    write_ts = [0.0]
 
     def on_ctx(ctx):
         recv_ts = time.perf_counter_ns()
         latency_us = (recv_ts - write_ts[0]) / 1_000.0
         latencies.append(latency_us)
+
         if len(latencies) >= n_lines:
             done.set()
 
@@ -190,34 +198,53 @@ def bench_e2e_pipeline(n_lines: int = 50) -> Dict[str, Any]:
     bridge.start()
     time.sleep(0.05)  # let bridge settle
 
-    with open(log_path, "a") as f:
-        for i, line in enumerate(SAMPLE_LINES * (n_lines // len(SAMPLE_LINES) + 1)):
-            if i >= n_lines:
-                break
-            write_ts[0] = time.perf_counter_ns()
-            f.write(line + "\n")
-            f.flush()
-            time.sleep(0.015)  # stagger writes to avoid read batching
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            for i, line in enumerate(
+                SAMPLE_LINES * (n_lines // len(SAMPLE_LINES) + 1)
+            ):
+                if i >= n_lines:
+                    break
 
-    done.wait(timeout=10.0)
-    bridge.stop()
-    os.unlink(log_path)
+                write_ts[0] = time.perf_counter_ns()
+                f.write(line + "\n")
+                f.flush()
+
+                # Ensure immediate disk write
+                os.fsync(f.fileno())
+
+                # Stagger writes to avoid batching
+                time.sleep(0.015)
+
+        done.wait(timeout=10.0)
+
+    finally:
+        bridge.stop()
+
+        # Safe cleanup
+        try:
+            if os.path.exists(log_path):
+                os.unlink(log_path)
+        except PermissionError:
+            pass
 
     if not latencies:
-        return {"name": "e2e_pipeline", "error": "No callbacks received"}
+        return {
+            "name": "e2e_pipeline",
+            "error": "No callbacks received"
+        }
 
     return {
-        "name":        "e2e_pipeline",
+        "name": "e2e_pipeline",
         "description": "Write → bridge callback latency (file IPC)",
-        "n_samples":   len(latencies),
-        "mean_us":     statistics.mean(latencies),
-        "median_us":   statistics.median(latencies),
-        "p95_us":      sorted(latencies)[int(0.95 * len(latencies))],
-        "p99_us":      sorted(latencies)[int(0.99 * len(latencies))],
-        "min_us":      min(latencies),
-        "max_us":      max(latencies),
+        "n_samples": len(latencies),
+        "mean_us": statistics.mean(latencies),
+        "median_us": statistics.median(latencies),
+        "p95_us": sorted(latencies)[int(0.95 * len(latencies))],
+        "p99_us": sorted(latencies)[int(0.99 * len(latencies))],
+        "min_us": min(latencies),
+        "max_us": max(latencies),
     }
-
 
 def compute_cpu_overhead(hot_path_mean_us: float,
                           poll_interval_ms: int = 500) -> Dict[str, float]:

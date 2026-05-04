@@ -1,0 +1,9 @@
+# Project Sentinel — Python dependencies
+#
+# Core runtime (all three are small, pure-Python or pre-built wheels)
+anthropic>=0.25.0        # Claude API client
+watchdog>=4.0.0          # File system events (optional — bridge uses its own tail)
+psutil>=5.9.0            # Cross-platform process/system metrics (optional enhancement)
+
+# Test
+pytest>=8.0.0

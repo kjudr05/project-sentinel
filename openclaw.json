@@ -1,0 +1,27 @@
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+    "SENTINEL_LOG_PATH": "../logs/sentinel_redo.log",
+    "SENTINEL_POLL_MS": "500"
+  },
+  "gateway": {
+    "port": 18789,
+    "bind": "127.0.0.1"
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-6"
+      }
+    },
+    "list": [
+      {
+        "id": "sentinel",
+        "workspace": "./openclaw/workspace",
+        "model": {
+          "primary": "anthropic/claude-sonnet-4-6"
+        }
+      }
+    ]
+  }
+}

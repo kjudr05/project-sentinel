@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Sentinel — Live Dashboard</title>
+<style>
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #161a24;
+    --border:    #232840;
+    --accent:    #3d7aed;
+    --green:     #22c55e;
+    --yellow:    #f59e0b;
+    --red:       #ef4444;
+    --magenta:   #a855f7;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --card-pad:  1.4rem;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  header h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  #status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); display: inline-block;
+    margin-right: 6px;
+    transition: background 0.3s;
+  }
+  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #status-dot.warn { background: var(--yellow); }
+  #status-dot.dead { background: var(--red); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: auto;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+  }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px)  { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: var(--card-pad);
+    transition: border-color 0.3s;
+  }
+  .card.alert-warn     { border-color: var(--yellow); }
+  .card.alert-critical { border-color: var(--red); }
+  .card-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+  .card-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .card-value.green   { color: var(--green); }
+  .card-value.yellow  { color: var(--yellow); }
+  .card-value.red     { color: var(--red); }
+  .card-value.magenta { color: var(--magenta); }
+  .card-sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* Gauge bar */
+  .gauge-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin: 0.6rem 0;
+    overflow: hidden;
+  }
+  .gauge-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease, background 0.5s ease;
+  }
+
+  /* Spark chart */
+  .spark-wrap {
+    grid-column: span 2;
+  }
+  .spark-canvas {
+    width: 100%;
+    height: 120px;
+    display: block;
+  }
+  .spark-legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.4rem;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+  .spark-legend span::before {
+    content: '─ ';
+  }
+  .spark-legend .ram::before   { color: var(--accent); }
+  .spark-legend .cpu::before   { color: var(--green); }
+  .spark-legend .temp::before  { color: var(--yellow); }
+
+  /* Mode card */
+  .mode-card {
+    grid-column: span 2;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .mode-icon {
+    font-size: 3rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .mode-text h2 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  .mode-text p { color: var(--muted); margin-top: 0.3rem; font-size: 0.8rem; }
+
+  /* Alerts */
+  .alerts-card { grid-column: span 2; }
+  .alert-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin: 0.15rem;
+    letter-spacing: 0.05em;
+  }
+  .alert-badge.critical { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid var(--red); }
+  .alert-badge.warn     { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+  .alert-badge.ok       { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid var(--green); }
+
+  /* Forecast */
+  .forecast-card { grid-column: span 4; }
+  .forecast-text { color: var(--text); line-height: 1.6; margin-top: 0.5rem; }
+
+  /* Mode history timeline */
+  .timeline-card { grid-column: span 4; }
+  .timeline { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.6rem; }
+  .timeline-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 0.72rem;
+  }
+  .timeline-item .ttime { color: var(--muted); }
+  .timeline-item .tmode { font-weight: 600; }
+  .timeline-item.FULL     { border-color: var(--green); }
+  .timeline-item.QUANTIZED{ border-color: var(--yellow); }
+  .timeline-item.MINIMAL  { border-color: var(--red); }
+
+  /* Connection bar */
+  #conn-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    padding: 0.5rem 1.5rem;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Demo mode controls */
+  #demo-controls {
+    display: flex; gap: 0.5rem; align-items: center;
+    padding: 0.5rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  #demo-controls label { color: var(--muted); font-size: 0.75rem; }
+  .demo-btn {
+    padding: 0.3rem 0.9rem;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .demo-btn:hover { border-color: var(--accent); background: rgba(61,122,237,0.1); }
+  .demo-btn.active { border-color: var(--accent); background: rgba(61,122,237,0.2); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>▐ Project Sentinel <span>/ Hardware-Aware AI Dashboard</span></h1>
+  <div>
+    <span id="status-dot"></span>
+    <span id="status-text">connecting…</span>
+  </div>
+</header>
+
+<div id="demo-controls">
+  <label>Simulate scenario:</label>
+  <button class="demo-btn active" onclick="setScenario('live')">Live API</button>
+  <button class="demo-btn" onclick="setScenario('nominal')">Nominal</button>
+  <button class="demo-btn" onclick="setScenario('warn')">Warn</button>
+  <button class="demo-btn" onclick="setScenario('critical')">Critical</button>
+  <button class="demo-btn" onclick="setScenario('cycle')">Full Cycle</button>
+  &nbsp;|&nbsp;
+  <label>API:</label>
+  <input id="api-url" value="http://localhost:7474"
+         style="background:var(--bg);border:1px solid var(--border);color:var(--text);
+                padding:0.25rem 0.5rem;border-radius:4px;font-family:inherit;font-size:0.75rem;width:180px">
+  <button class="demo-btn" onclick="reconnect()">Connect</button>
+</div>
+
+<div class="grid">
+
+  <!-- RAM -->
+  <div class="card" id="card-ram">
+    <div class="card-label">RAM Pressure</div>
+    <div class="card-value" id="val-ram">—</div>
+    <div class="gauge-track"><div class="gauge-fill" id="gauge-ram" style="width:0%"></div></div>
+    <div class="card-sub" id="sub-ram">— MB free</div>
+  </div>
+
+  <!-- CPU -->
+  <div class="card" id="card-cpu">
+    <div class="card-label">CPU Load</div>
+    <div class="card-value" id="val-cpu">—</div>
+    <div class="gauge-track"><div class="gauge-fill" id="gauge-cpu" style="width:0%"></div></div>
+    <div class="card-sub" id="sub-cpu">—</div>
+  </div>
+
+  <!-- Thermal -->
+  <div class="card" id="card-temp">
+    <div class="card-label">Temperature</div>
+    <div class="card-value" id="val-temp">—</div>
+    <div class="gauge-track"><div class="gauge-fill" id="gauge-temp" style="width:0%"></div></div>
+    <div class="card-sub" id="sub-temp">—</div>
+  </div>
+
+  <!-- Battery -->
+  <div class="card" id="card-bat">
+    <div class="card-label">Battery</div>
+    <div class="card-value" id="val-bat">—</div>
+    <div class="gauge-track"><div class="gauge-fill" id="gauge-bat" style="width:0%"></div></div>
+    <div class="card-sub" id="sub-bat">—</div>
+  </div>
+
+  <!-- Spark chart -->
+  <div class="card spark-wrap">
+    <div class="card-label">30-Second History</div>
+    <canvas class="spark-canvas" id="spark"></canvas>
+    <div class="spark-legend">
+      <span class="ram">RAM %</span>
+      <span class="cpu">CPU %</span>
+      <span class="temp">Temp °C (scaled)</span>
+    </div>
+  </div>
+
+  <!-- Mode -->
+  <div class="card mode-card" id="card-mode">
+    <div class="mode-icon" id="mode-icon">⬜</div>
+    <div class="mode-text">
+      <h2 id="mode-name">—</h2>
+      <p id="mode-desc">Waiting for hardware data…</p>
+      <p id="mode-budget" style="margin-top:0.4rem"></p>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div class="card alerts-card">
+    <div class="card-label">Active Alerts</div>
+    <div id="alerts-container" style="margin-top:0.5rem">
+      <span class="alert-badge ok">No alerts</span>
+    </div>
+  </div>
+
+  <!-- Pressure / trend -->
+  <div class="card">
+    <div class="card-label">Pressure State</div>
+    <div class="card-value" id="val-pressure">—</div>
+    <div class="card-sub" id="sub-trend">Trend: —</div>
+    <div class="card-sub" id="sub-lsn" style="margin-top:0.3rem">LSN: —</div>
+  </div>
+
+  <!-- Forecast -->
+  <div class="card forecast-card">
+    <div class="card-label">30-Second Forecast</div>
+    <div class="forecast-text" id="forecast-text">Waiting for data…</div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="card timeline-card">
+    <div class="card-label">Mode Change Timeline</div>
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+</div>
+
+<div id="conn-bar">
+  <span id="conn-info">Not connected</span>
+  <span id="last-update">—</span>
+</div>
+
+<script>
+// ── Data Store ───────────────────────────────────────────────────────────────
+const MAX_HISTORY = 60;
+const history = { ram: [], cpu: [], temp: [] };
+const modeTimeline = [];
+let lastMode = null;
+let sampleCount = 0;
+let apiBase = "http://localhost:7474";
+let scenario = "live";
+let mockTimer = null;
+let sseSource  = null;
+
+// ── Colour helpers ────────────────────────────────────────────────────────────
+function ramColor(v)  { return v >= 90 ? "red" : v >= 75 ? "yellow" : "green"; }
+function cpuColor(v)  { return v >= 90 ? "red" : v >= 70 ? "yellow" : "green"; }
+function tempColor(v) { return v >= 85 ? "red" : v >= 70 ? "yellow" : "green"; }
+function batColor(v, charging) {
+  if (charging) return "green";
+  return v < 10 ? "red" : v < 20 ? "yellow" : "green";
+}
+function modeColor(m) {
+  return { FULL:"green", QUANTIZED:"yellow", MINIMAL:"red", SUSPEND:"magenta" }[m] || "green";
+}
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// ── Gauge updater ─────────────────────────────────────────────────────────────
+function setGauge(id, pct, color) {
+  const el = document.getElementById(id);
+  el.style.width = Math.min(100, pct) + "%";
+  el.style.background = cssVar("--" + color);
+}
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+function setClass(id, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = "card-value " + color;
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+function render(d) {
+  sampleCount++;
+
+  // RAM
+  const rc = ramColor(d.ram_used_pct);
+  setText("val-ram", d.ram_used_pct.toFixed(1) + "%");
+  setClass("val-ram", rc);
+  setGauge("gauge-ram", d.ram_used_pct, rc);
+  setText("sub-ram", d.ram_free_mb.toFixed(0) + " MB free  Δ" + (d.ram_delta_pct >= 0 ? "+" : "") + d.ram_delta_pct.toFixed(1) + "%");
+  document.getElementById("card-ram").className = "card" + (rc==="red"?" alert-critical":rc==="yellow"?" alert-warn":"");
+
+  // CPU
+  const cc = cpuColor(d.cpu_pct);
+  setText("val-cpu", d.cpu_pct.toFixed(1) + "%");
+  setClass("val-cpu", cc);
+  setGauge("gauge-cpu", d.cpu_pct, cc);
+  setText("sub-cpu", d.cpu_pct > 90 ? "Saturated — scheduling backlog" : d.cpu_pct > 70 ? "High load" : "Healthy");
+
+  // Thermal
+  const tc = tempColor(d.thermal_c);
+  setText("val-temp", d.thermal_c.toFixed(1) + "°C");
+  setClass("val-temp", tc);
+  setGauge("gauge-temp", (d.thermal_c / 100) * 100, tc);
+  setText("sub-temp", d.thermal_c >= 85 ? "⚠ Throttling imminent" : d.thermal_c >= 70 ? "Warm — monitor closely" : "Within safe range");
+
+  // Battery
+  const bc = batColor(d.battery_pct, d.charging);
+  const batStr = d.battery_pct < 0 ? "N/A" : d.battery_pct.toFixed(0) + "%";
+  setText("val-bat", batStr);
+  setClass("val-bat", bc);
+  setGauge("gauge-bat", d.battery_pct < 0 ? 100 : d.battery_pct, bc);
+  setText("sub-bat", d.battery_pct < 0 ? "No battery (desktop)" : d.charging ? "⚡ Charging" : "On battery");
+
+  // Pressure + trend
+  const pc = { NOMINAL:"green", WARN:"yellow", CRITICAL:"red" }[d.pressure] || "green";
+  setText("val-pressure", d.pressure);
+  setClass("val-pressure", pc);
+  setText("sub-trend", "Trend: " + d.trend);
+  setText("sub-lsn", "LSN: " + d.lsn + "  ·  " + (d.time || ""));
+
+  // Mode
+  const icons = { FULL:"●", QUANTIZED:"◑", MINIMAL:"○", SUSPEND:"⊘" };
+  const modeDescs = {
+    FULL:      "Full capability — rich responses, deep reasoning",
+    QUANTIZED: "Quantized mode — concise, efficient responses",
+    MINIMAL:   "Minimal mode — shortest correct answer only",
+    SUSPEND:   "Suspended — resources critically low",
+  };
+  setText("mode-icon", icons[d.ai_mode] || "?");
+  document.getElementById("mode-icon").style.color = cssVar("--" + modeColor(d.ai_mode));
+  setText("mode-name", d.ai_mode);
+  document.getElementById("mode-name").style.color = cssVar("--" + modeColor(d.ai_mode));
+  setText("mode-desc", modeDescs[d.ai_mode] || "");
+  setText("mode-budget", "Token budget: " + d.token_budget + "  ·  Depth: " + d.reasoning_depth);
+
+  // Alerts
+  const alertsEl = document.getElementById("alerts-container");
+  if (d.alert_flags && d.alert_flags.length > 0) {
+    alertsEl.innerHTML = d.alert_flags.map(f => {
+      const cls = f.includes("CRITICAL") ? "critical" : "warn";
+      return `<span class="alert-badge ${cls}">${f}</span>`;
+    }).join("");
+  } else {
+    alertsEl.innerHTML = '<span class="alert-badge ok">✓ No alerts</span>';
+  }
+
+  // Forecast
+  setText("forecast-text", d.forecast || "—");
+
+  // History + spark
+  history.ram.push(d.ram_used_pct);
+  history.cpu.push(d.cpu_pct);
+  history.temp.push(d.thermal_c);
+  if (history.ram.length > MAX_HISTORY) {
+    history.ram.shift(); history.cpu.shift(); history.temp.shift();
+  }
+  drawSpark();
+
+  // Mode timeline
+  if (d.ai_mode !== lastMode) {
+    lastMode = d.ai_mode;
+    modeTimeline.unshift({ mode: d.ai_mode, time: d.time || "—", ram: d.ram_used_pct });
+    if (modeTimeline.length > 8) modeTimeline.pop();
+    renderTimeline();
+  }
+
+  // Status dot
+  const dot = document.getElementById("status-dot");
+  dot.className = "live";
+  const statusText = document.getElementById("status-text");
+  statusText.textContent = scenario === "live" ? "Live — SSE stream" : "Demo — " + scenario;
+
+  setText("last-update", "Last: " + (d.time || new Date().toLocaleTimeString()) + "  ·  Samples: " + sampleCount);
+}
+
+// ── Spark chart ───────────────────────────────────────────────────────────────
+function drawSpark() {
+  const canvas = document.getElementById("spark");
+  const ctx    = canvas.getContext("2d");
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  canvas.width  = W;
+  canvas.height = H;
+
+  ctx.clearRect(0, 0, W, H);
+
+  function drawLine(data, color) {
+    if (data.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 4;
+    data.forEach((v, i) => {
+      const x = (i / (MAX_HISTORY - 1)) * W;
+      const y = H - (Math.min(100, v) / 100) * H;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  drawLine(history.ram,  cssVar("--accent"));
+  drawLine(history.cpu,  cssVar("--green"));
+  // Scale temp 0-100°C → 0-100%
+  drawLine(history.temp.map(t => t), cssVar("--yellow"));
+
+  // Grid lines at 25, 50, 75
+  ctx.strokeStyle = cssVar("--border");
+  ctx.lineWidth   = 0.5;
+  [25, 50, 75].forEach(pct => {
+    const y = H - (pct / 100) * H;
+    ctx.beginPath();
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--muted");
+    ctx.font = "9px monospace";
+    ctx.fillText(pct + "%", 2, y - 2);
+  });
+}
+
+function renderTimeline() {
+  const el = document.getElementById("timeline");
+  el.innerHTML = modeTimeline.map(item => `
+    <div class="timeline-item ${item.mode}">
+      <span class="ttime">${item.time}</span>
+      <span class="tmode" style="color:var(--${modeColor(item.mode)})">${item.mode}</span>
+      <span style="color:var(--muted)">${item.ram.toFixed(0)}% RAM</span>
+    </div>
+  `).join("");
+}
+
+// ── Live SSE connection ───────────────────────────────────────────────────────
+function connectSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  const url = apiBase + "/stream";
+  try {
+    sseSource = new EventSource(url);
+    sseSource.onmessage = e => {
+      try { render(JSON.parse(e.data)); } catch {}
+    };
+    sseSource.onerror = () => {
+      document.getElementById("status-dot").className = "dead";
+      document.getElementById("status-text").textContent = "Disconnected";
+      setText("conn-info", "SSE disconnected — retrying…");
+    };
+    sseSource.onopen = () => {
+      setText("conn-info", "SSE connected → " + url);
+    };
+  } catch(e) {
+    setText("conn-info", "SSE not supported or server unreachable");
+  }
+}
+
+// ── Demo / mock mode ─────────────────────────────────────────────────────────
+let cyclePhase = 0;
+let cycleStep  = 0;
+
+const PHASES = [
+  { name:"nominal",  ram:32,  cpu:14,  temp:46, bat:88, charging:true,  steps:12 },
+  { name:"warn",     ram:78,  cpu:58,  temp:71, bat:42, charging:false, steps:15 },
+  { name:"critical", ram:93,  cpu:88,  temp:87, bat:9,  charging:false, steps:12 },
+  { name:"recovery", ram:38,  cpu:18,  temp:50, bat:38, charging:true,  steps:10 },
+];
+
+let fakeLSN = 1_000_000;
+let fakeTS  = Date.now();
+
+function makeFakeReading(scenarioName) {
+  fakeLSN++;
+  fakeTS += 500;
+
+  let ram, cpu, temp, bat, charging;
+
+  if (scenarioName === "cycle") {
+    const ph = PHASES[cyclePhase % PHASES.length];
+    const t  = cycleStep / ph.steps;
+    const next = PHASES[(cyclePhase + 1) % PHASES.length];
+    ram = ph.ram + (next.ram - ph.ram) * t + (Math.random()-0.5)*2;
+    cpu = ph.cpu + (next.cpu - ph.cpu) * t + (Math.random()-0.5)*4;
+    temp= ph.temp + (next.temp - ph.temp) * t + (Math.random()-0.5)*1.5;
+    bat = ph.bat + (next.bat - ph.bat) * t + (Math.random()-0.5)*0.3;
+    charging = ph.charging;
+    cycleStep++;
+    if (cycleStep >= ph.steps) { cycleStep = 0; cyclePhase++; }
+  } else {
+    const base = {
+      nominal:  { ram:32,  cpu:14,  temp:46, bat:88, charging:true  },
+      warn:     { ram:78,  cpu:58,  temp:71, bat:42, charging:false },
+      critical: { ram:93,  cpu:88,  temp:87, bat:9,  charging:false },
+    }[scenarioName] || { ram:32, cpu:14, temp:46, bat:88, charging:true };
+    ram = base.ram + (Math.random()-0.5)*3;
+    cpu = base.cpu + (Math.random()-0.5)*6;
+    temp= base.temp + (Math.random()-0.5)*2;
+    bat = base.bat + (Math.random()-0.5)*0.4;
+    charging = base.charging;
+  }
+
+  ram  = Math.max(0, Math.min(100, ram));
+  cpu  = Math.max(0, Math.min(100, cpu));
+  temp = Math.max(20, Math.min(100, temp));
+  bat  = Math.max(0, Math.min(100, bat));
+
+  const pressure = ram >= 90 || temp >= 85 || (bat < 10 && !charging)
+    ? "CRITICAL" : ram >= 75 || temp >= 70 || (bat < 20 && !charging)
+    ? "WARN" : "NOMINAL";
+
+  const mode = pressure === "CRITICAL" ? "MINIMAL"
+             : pressure === "WARN"     ? "QUANTIZED" : "FULL";
+
+  const budget = { MINIMAL:256, QUANTIZED:512, FULL:1024 }[mode];
+  const depth  = { MINIMAL:"SHALLOW", QUANTIZED:"STANDARD", FULL:"DEEP" }[mode];
+
+  const flags = [];
+  if (ram >= 90) flags.push("RAM_CRITICAL");
+  else if (ram >= 75) flags.push("RAM_WARN");
+  if (temp >= 85) flags.push("THERMAL_CRITICAL");
+  else if (temp >= 70) flags.push("THERMAL_WARN");
+  if (bat < 10 && !charging) flags.push("BATTERY_CRITICAL");
+  else if (bat < 20 && !charging) flags.push("BATTERY_LOW");
+
+  const forecast = pressure === "CRITICAL"
+    ? `Memory at ${ram.toFixed(0)}% and rising — throttling active to protect system stability.`
+    : pressure === "WARN"
+    ? `Moderate pressure detected (RAM ${ram.toFixed(0)}%, ${temp.toFixed(0)}°C). Monitoring closely.`
+    : `Device healthy — RAM ${ram.toFixed(0)}%, ${temp.toFixed(0)}°C. Full capability available.`;
+
+  const h = new Date(fakeTS);
+  const timeStr = h.getHours().toString().padStart(2,"0") + ":"
+                + h.getMinutes().toString().padStart(2,"0") + ":"
+                + h.getSeconds().toString().padStart(2,"0");
+  return {
+    lsn: fakeLSN, timestamp_ms: fakeTS, time: timeStr,
+    ram_used_pct: ram, ram_free_mb: (100-ram)*60, ram_delta_pct: (Math.random()-0.5)*2,
+    cpu_pct: cpu, thermal_c: temp,
+    battery_pct: bat, charging,
+    disk_pct: 55,
+    pressure, trend: ram > 80 ? "RISING" : ram < 40 ? "FALLING" : "STABLE",
+    ai_mode: mode, reasoning_depth: depth, token_budget: budget,
+    alert_flags: flags, forecast,
+  };
+}
+
+function startMock(s) {
+  if (mockTimer) clearInterval(mockTimer);
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  mockTimer = setInterval(() => render(makeFakeReading(s)), 500);
+  document.getElementById("status-dot").className = "live";
+  document.getElementById("status-text").textContent = "Demo: " + s;
+  setText("conn-info", "Demo mode — no API required");
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function setScenario(s) {
+  scenario = s;
+  document.querySelectorAll(".demo-btn").forEach(b => b.classList.remove("active"));
+  event.target.classList.add("active");
+
+  if (s === "live") {
+    if (mockTimer) { clearInterval(mockTimer); mockTimer = null; }
+    connectSSE();
+  } else {
+    startMock(s);
+  }
+}
+
+function reconnect() {
+  apiBase = document.getElementById("api-url").value.replace(/\/$/, "");
+  if (scenario === "live") connectSSE();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener("load", () => {
+  // Try live first; fall back to demo after 2s if no data
+  connectSSE();
+  setTimeout(() => {
+    if (sampleCount === 0) {
+      console.log("No live data — switching to demo mode");
+      startMock("cycle");
+      document.querySelectorAll(".demo-btn").forEach(b => b.classList.remove("active"));
+      document.querySelector(".demo-btn:nth-child(5)").classList.add("active");
+    }
+  }, 2000);
+});
+
+window.addEventListener("resize", drawSpark);
+</script>
+
+</body>
+</html>

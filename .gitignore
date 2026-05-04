@@ -1,0 +1,24 @@
+# Build artefacts
+engine/sentinel_engine
+engine/sentinel_engine.exe
+engine/*.obj
+engine/*.pdb
+
+# Logs (don't commit real telemetry)
+logs/*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+openclaw/workspace/skills/memory/

@@ -1,0 +1,112 @@
+name: Sentinel CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-python:
+    name: Python Tests (${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: pip install anthropic psutil pytest
+      - name: Run full test suite (133 tests)
+        run: python -m pytest tests/ -v --tb=short
+
+  benchmark:
+    name: Overhead Benchmark
+    runs-on: ubuntu-latest
+    needs: test-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install anthropic psutil pytest
+      - name: Run benchmark
+        run: python scripts/benchmark.py --iterations 5000 --output benchmark_results.json
+      - name: Print results
+        run: |
+          python -c "
+          import json
+          with open('benchmark_results.json') as f: r = json.load(f)
+          pp = r.get('parse_plus_analyse', {})
+          cpu = r.get('cpu_overhead', {})
+          print(f'Throughput : {pp.get(\"throughput_per_sec\",0):,.0f} lines/sec')
+          print(f'CPU overhead: {cpu.get(\"overhead_pct\",0):.4f}%')
+          "
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_results.json
+
+  build-cpp:
+    name: C++ Engine Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y g++
+      - name: Build
+        run: |
+          mkdir -p logs
+          g++ -O2 -std=c++17 -pthread -Wall engine/sentinel_engine.cpp -o engine/sentinel_engine
+      - name: Smoke test
+        run: |
+          cd engine && timeout 3 ./sentinel_engine || true
+          test -f ../logs/sentinel_redo.log && echo "Log created OK" || exit 1
+
+  test-openclaw-skill:
+    name: OpenClaw Skill Tests
+    runs-on: ubuntu-latest
+    needs: test-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install anthropic psutil pytest
+      - run: python -m pytest tests/test_openclaw_skill.py -v --tb=short
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pyflakes
+      - name: Python syntax
+        run: |
+          python -m pyflakes bridge/sentinel_bridge.py
+          python -m pyflakes bridge/anomaly_detector.py
+          python -m pyflakes agent/sentinel_agent.py
+          python -m pyflakes agent/sentinel_memory.py
+          python -m pyflakes scripts/sentinel_api.py
+          echo "All syntax checks passed"
+      - name: C++ syntax
+        run: g++ -fsyntax-only -std=c++17 engine/sentinel_engine.cpp
+
+  demo-dryrun:
+    name: Demo Dry Run
+    runs-on: ubuntu-latest
+    needs: test-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install anthropic psutil pytest
+      - run: python scripts/demo.py --quick
+      - run: python scripts/visualise_log.py --demo --output /tmp/report.html
+      - run: |
+          size=$(wc -c < /tmp/report.html)
+          [ $size -gt 10000 ] && echo "Report OK ($size bytes)" || exit 1

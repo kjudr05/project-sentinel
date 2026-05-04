@@ -45,14 +45,6 @@ battery · disk · NPU       LSN-stamped          linear regression            M
 
 ---
 
-## Video Demo
-
-> 📹 **[Watch the 10-minute walkthrough on YouTube →](https://youtube.com/YOUR_LINK_HERE)**
->
-> Covers: test suite · web dashboard · AI mode adaptation · anomaly detection · benchmark · OpenClaw integration
->
-> *(Upload your recording and replace the link above before submission)*
-
 ---
 
 ## Repository Structure

@@ -45,6 +45,10 @@ battery · disk · NPU       LSN-stamped          linear regression            M
 
 ---
 
+## Project Recoding 
+The Recording has been uploaded in the GitHub under the folder name **RECORDING**.
+Under the folder **RECORDING** you will find a VLC recording named as **RECORDING**
+
 ---
 
 ## Repository Structure

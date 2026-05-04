@@ -17,14 +17,14 @@ so the AI agent is never blocked waiting for telemetry.
 import re
 import time
 import os
-import json
+
 import threading
 import statistics
 from dataclasses import dataclass, asdict
 from collections import deque
 from typing import Optional, Callable, List
 from pathlib import Path
-from datetime import datetime
+
 
 from anomaly_detector import AnomalyDetector
 

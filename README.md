@@ -1,183 +1,96 @@
 # 🛡️ Project Sentinel
-
 ### Hardware-Aware Adaptive AI for Samsung Galaxy Devices
-
-**Samsung PRISM (AX) Hackathon — Problem Statement #3 / Theme 2: Daily Utility (Smartphones)**
-
-> *“The best AI on a device isn't the most powerful — it's the one that knows when to be quiet.”*
+**Samsung PRISM (AX) Hackathon — Theme 2: Daily Utility (Smartphones)**
 
 ---
 
-## The Problem We Solved
+## Problem
 
-On-device AI agents are **hardware-blind**. They execute inference and reasoning tasks without awareness of the device’s physical state — RAM pressure, thermal throttling, battery health, or storage constraints.
+On-device AI agents are **hardware-blind**. They execute complex reasoning tasks without any awareness of the device's physical state — RAM pressure, thermal throttling, or battery health. The result is three failure modes every Galaxy user has experienced:
 
-This creates three major real-world failure modes:
+- **Thermal collapse** — the SoC throttles mid-inference, producing stuttered or corrupted responses
+- **Memory kill** — the OOM killer terminates the AI process with no warning to the user
+- **Battery drain cliff** — sustained inference pulls peak current, accelerating shutdown
 
-* **Thermal collapse** — the SoC throttles mid-inference, producing stuttered or incomplete responses
-* **Memory kill** — the OOM killer terminates the AI process with no warning
-* **Battery drain cliff** — sustained inference accelerates shutdown nonlinearly
-
-Existing systems react *after* the OS intervenes.
-**Sentinel reacts before failure happens.**
+Existing solutions react *after* the OS acts. We react *before*.
 
 ---
 
-## Solution Overview
+## Solution
 
-**Sentinel** is a hardware-to-AI bridge that gives AI agents a real-time nervous system.
+**Sentinel** gives the AI agent a nervous system. A lightweight C++/Python telemetry engine polls hardware metrics every 500ms and writes them to an atomic redo log. A Python bridge tails the log, runs statistical analysis and anomaly detection, and injects a structured hardware-context block into the AI agent's system prompt before every conversation turn.
 
-A lightweight telemetry engine continuously monitors hardware metrics every 500ms and writes them to an atomic redo log. A Python bridge tails this log, performs forecasting + anomaly detection, and injects structured hardware context directly into the AI system prompt before every conversation turn.
+The agent — running on OpenClaw with Claude — reads this context and automatically adapts its operating mode, response depth, and token budget in real time.
 
-```text
-C++ / Python Engine          redo log             Python Bridge               AI Agent
-(polls every 500ms)  ──────────────────▶  (tail + analyse + forecast)  ──▶  (Claude / Ollama / OpenClaw)
-RAM · CPU · thermal          atomic append        anomaly detection            adaptive mode
-battery · disk · NPU         LSN-stamped          linear regression            token budget
+```
+C++/Python Engine          redo log             Python Bridge              OpenClaw + Claude
+(polls every 500ms)  ────────────────▶  (tail + analyse + forecast)  ──▶  (adaptive agent)
+RAM · CPU · thermal        atomic append        anomaly detection            FULL / QUANTIZED
+battery · disk · NPU       LSN-stamped          linear regression            MINIMAL / SUSPEND
 ```
 
----
+### Five Novel Contributions
 
-## Core Innovation
-
-Most AI systems treat hardware like a static resource pool.
-
-**Sentinel treats the device as a living metabolism** — dynamic, constrained, and constantly changing.
-
-```text
-┌─────────────────┐     redo log      ┌──────────────────┐     context dict     ┌────────────────────┐
-│  Iron (C++)     │ ────────────────▶ │ Handshake (Py)   │ ───────────────────▶ │ Soul (AI Agent)    │
-│ Hardware poll   │    atomic append  │ Tail + analyse   │    system prompt     │ Claude / Ollama    │
-│ 500ms interval  │                   │ Forecast engine  │    injection         │ Adaptive mode      │
-└─────────────────┘                   └──────────────────┘                      └────────────────────┘
-```
+1. **Multi-signal fusion** — RAM, CPU, thermal, battery, disk combined into one `pressure_state`
+2. **Horizon forecasting** — linear regression predicts critical state 30 seconds ahead
+3. **8-pattern anomaly detection** — Z-score, variance ratio, rate-of-change (RAM spike, thermal runaway, battery cliff, CPU thrash, and more)
+4. **Per-turn context injection** — hardware re-sampled before every API call, not just at startup
+5. **Session hardware memory** — agent remembers hardware events across the conversation
 
 ---
 
-## Five Novel Contributions
+## Architecture
 
-### 1. Multi-signal fusion
-
-RAM, CPU, thermal, battery, disk, and optional NPU metrics are fused into one composite `pressure_state`.
-
-### 2. Horizon forecasting
-
-Linear regression over rolling windows predicts critical resource pressure ahead of time, enabling proactive throttling.
-
-### 3. Statistical anomaly detection
-
-Eight hardware failure signatures are detected:
-
-* `RAM_SPIKE`
-* `RAM_CREEP`
-* `THERMAL_RUNAWAY`
-* `BATTERY_CLIFF`
-* `CPU_THRASH`
-* `COMPOUND_PRESSURE`
-* `MEMORY_OSCILLATION`
-* `RECOVERY_DETECTED`
-
-### 4. Per-turn context injection
-
-Hardware state is refreshed before every AI call, not just at startup.
-
-### 5. Session hardware memory
-
-The AI remembers hardware stress events across a conversation session.
+![Project Sentinel Architecture](docs/ARCHITECTURE.svg)
 
 ---
 
-## Adaptive Behaviour Model
+## Video Demo
 
-| Device State      |      Mode | Reasoning Depth | Max Tokens | Behaviour              |
-| ----------------- | --------: | --------------: | ---------: | ---------------------- |
-| Healthy           |      FULL |            DEEP |       1024 | Full-quality reasoning |
-| Moderate pressure | QUANTIZED |        STANDARD |        512 | Efficient response     |
-| High pressure     | QUANTIZED |        STANDARD |        400 | Proactive throttle     |
-| Critical          |   MINIMAL |         SHALLOW |        256 | Survival mode          |
-| Critical + Rising |   SUSPEND |               — |          — | Voluntary pause        |
-
----
-
-## Measured Results
-
-| Metric                   |                     Value | Method                        |
-| ------------------------ | ------------------------: | ----------------------------- |
-| Bridge CPU overhead      |  **0.017%** at 500ms poll | `python scripts/benchmark.py` |
-| Parse throughput         |     **12,000+ lines/sec** | 10K-line microbenchmark       |
-| Write → callback latency |                 **<10ms** | File IPC timing               |
-| Heap footprint           |                 **<4 KB** | tracemalloc                   |
-| Test coverage            | **94+ tests, 0 failures** | Unit + stress + integration   |
-
----
-
-## Redo Log Format
-
-```text
-LSN:1000042 | TS:1700000123456 | RAM_USED:67.3% | RAM_FREE_MB:2048.5 | CPU:34.1% | THERMAL_C:62.0 | BAT:55.0(DC) | DISK:71.2% | STATE:NOMINAL | TREND:RISING | DELTA:+0.8%
-```
-
-### Fields:
-
-* **LSN** — Log Sequence Number
-* **TS** — Timestamp
-* **STATE** — NOMINAL / WARN / CRITICAL
-* **TREND** — RISING / STABLE / FALLING
-* **DELTA** — Resource velocity
-
----
-
-## Samsung Galaxy Integration Path
-
-| Component          | Samsung API / Path                            |
-| ------------------ | --------------------------------------------- |
-| Thermal zones      | `/sys/class/thermal/thermal_zone{3,7,9,15}`   |
-| Battery health     | `/sys/class/power_supply/battery/cycle_count` |
-| NPU utilisation    | `/sys/devices/platform/npu/utilization`       |
-| Knox policy        | Knox / sec sysfs                              |
-| Adaptive mode push | Knox MDM → `configs/engine.conf`              |
-| On-device fallback | Llama / Gemma in MINIMAL mode                 |
+> 📹 **[Watch the 10-minute walkthrough on YouTube →](https://youtube.com/YOUR_LINK_HERE)**
+>
+> Covers: test suite · web dashboard · AI mode adaptation · anomaly detection · benchmark · OpenClaw integration
+>
+> *(Upload your recording and replace the link above before submission)*
 
 ---
 
 ## Repository Structure
 
-```text
+```
 sentinel/
-├── openclaw.json
+├── openclaw.json                     OpenClaw gateway config
 ├── openclaw/workspace/
-│   ├── SOUL.md
-│   ├── IDENTITY.md
-│   ├── AGENTS.md
-│   ├── HEARTBEAT.md
+│   ├── SOUL.md                       Agent personality & adaptive mode rules
+│   ├── IDENTITY.md                   Agent identity (Sentinel)
+│   ├── AGENTS.md                     Boot sequence & session rules
+│   ├── HEARTBEAT.md                  Background monitoring (60s)
 │   └── skills/sentinel-hardware/
-│       ├── SKILL.md
-│       └── run.py
-├── engine/
-│   └── sentinel_engine.cpp
-├── scripts/
-│   ├── sentinel_engine_py.py
-│   ├── sentinel_api.py
-│   ├── demo.py
-│   ├── benchmark.py
-│   ├── replay.py
-│   ├── visualise_log.py
-│   └── sentinel_monitor.py
+│       ├── SKILL.md                  Custom OpenClaw skill manifest
+│       └── run.py                    Skill entry point (hardware to system prompt)
+├── engine/sentinel_engine.cpp        C++ hardware poller (Windows/Linux)
+├── scripts/sentinel_engine_py.py     Python hardware poller (no compiler needed)
 ├── bridge/
-│   ├── sentinel_bridge.py
-│   ├── anomaly_detector.py
-│   └── samsung_metrics.py
+│   ├── sentinel_bridge.py            Log watcher, ContextAnalyser, forecaster
+│   ├── anomaly_detector.py           8-pattern statistical anomaly detector
+│   └── samsung_metrics.py            Samsung-specific sysfs + Knox reader
 ├── agent/
-│   ├── sentinel_agent.py
-│   └── sentinel_memory.py
+│   ├── sentinel_agent.py             Standalone AI agent (Claude API)
+│   └── sentinel_memory.py            Session hardware event memory
 ├── dashboard/
-│   ├── sentinel_web.html
-│   └── sentinel_dashboard.py
-├── tests/
-├── docs/
-│   └── DESIGN.md
-├── AI_DISCLOSURE.md
-└── README.md
+│   ├── sentinel_web.html             Live web dashboard (SSE streaming)
+│   └── sentinel_dashboard.py         Terminal dashboard
+├── scripts/
+│   ├── sentinel_api.py               REST API server
+│   ├── demo.py                       One-command automated demo
+│   ├── benchmark.py                  Overhead benchmark (0.017% CPU verified)
+│   ├── replay.py                     Session replay (5 built-in scenarios)
+│   └── visualise_log.py              HTML session report generator
+├── tests/                            133 tests (unit, integration, stress, property)
+├── docs/DESIGN.md                    Architecture deep-dive
+├── SUBMISSION.md                     Hackathon one-pager
+├── AI_DISCLOSURE.md                  AI tools usage disclosure
+└── README.md                         This file
 ```
 
 ---
@@ -186,147 +99,121 @@ sentinel/
 
 ### Prerequisites
 
-| Requirement | Version |
-| ----------- | ------- |
-| Python      | 3.10+   |
-| Node.js     | 22+     |
-| OpenClaw    | Latest  |
-| Git         | Any     |
+| Requirement | Version | Install |
+|---|---|---|
+| Python | 3.10+ | python.org/downloads |
+| Node.js | 22+ | nodejs.org |
+| OpenClaw | 2026.4.29+ | npm install -g openclaw@latest |
+| Git | any | git-scm.com |
 
-### Clone Repo
+### Step 1 — Clone the repository
 
 ```bash
 git clone https://github.com/kjudr05/project-sentinel.git
 cd project-sentinel
 ```
 
-### Install Dependencies
+### Step 2 — Install Python dependencies
 
 ```bash
 pip install anthropic psutil pytest
 ```
 
-### Configure OpenClaw
+### Step 3 — Configure OpenClaw
+
+Get your API key from console.anthropic.com/settings/keys, then:
 
 ```bash
-openclaw onboard --anthropic-api-key "sk-ant-YOUR-KEY"
+openclaw onboard --anthropic-api-key "sk-ant-YOUR-KEY-HERE"
 ```
 
----
-
-## Usage Modes
-
-### Quick Demo (No API Key)
-
-```bash
-python scripts/demo.py --quick
-```
-
-### AI Agent Mock Modes
-
-```bash
-python agent/sentinel_agent.py --mock nominal
-python agent/sentinel_agent.py --mock warn
-python agent/sentinel_agent.py --mock critical
-```
-
-### Live Dashboard
-
-```bash
-python scripts/sentinel_api.py --mock warn
-```
-
-Then open:
-
-```text
-dashboard/sentinel_web.html
-```
-
-### Full OpenClaw Mode
-
-```bash
-python scripts/sentinel_engine_py.py
-openclaw gateway --config openclaw.json
-openclaw dashboard
-```
-
----
-
-## Testing
+### Step 4 — Verify everything works
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-### Coverage Includes:
-
-* Unit tests
-* Integration tests
-* Stress tests
-* Property tests
-* Forecasting validation
-* Anomaly detection validation
+Expected: **133 passed, 0 failed**
 
 ---
 
-## Platform Support
+## Usage
 
-### Linux / Samsung Galaxy Linux userspace
+### Instant demo (no API key needed, ~60 seconds)
 
-* `/proc/meminfo`
-* `/proc/stat`
-* `hwmon`
-* `thermal_zone`
+```bash
+python scripts/demo.py --quick
+```
 
-### Android (Termux / NDK)
+### Web dashboard
 
-* Native sysfs paths
-* Battery + thermal direct polling
+Open `dashboard/sentinel_web.html` in any browser. Auto-starts Full Cycle demo.
 
-### Windows (Galaxy Book)
+### API server + live dashboard
 
-* `GlobalMemoryStatusEx`
-* `GetSystemTimes`
-* `GetSystemPowerStatus`
+```bash
+# Terminal 1
+python scripts/sentinel_api.py --mock warn
+
+# Then open dashboard/sentinel_web.html in browser
+```
+
+### AI agent REPL
+
+```bash
+python agent/sentinel_agent.py --mock nominal
+python agent/sentinel_agent.py --mock critical
+```
+
+### One-command all-in-one (recommended for demos)
+
+```bash
+# Starts engine + API server + opens dashboard in browser
+python scripts/sentinel_monitor.py --mock warn
+
+# With live hardware
+python scripts/sentinel_monitor.py
+```
+
+### Full OpenClaw mode
+
+```bash
+python scripts/sentinel_engine_py.py          # Terminal 1: start hardware engine
+openclaw gateway --config openclaw.json       # Terminal 2: start OpenClaw
+openclaw dashboard                            # opens browser UI
+```
+
+### Session report
+
+```bash
+python scripts/visualise_log.py --demo
+# Generates sentinel_demo_report.html
+```
 
 ---
 
-## Samsung PRISM Relevance
+## Performance
 
-### What competitors miss:
-
-* Post-failure throttling
-* Single-signal checks
-* No prediction
-* No AI adaptation
-
-### What Sentinel adds:
-
-* Sub-second telemetry
-* Multi-signal state fusion
-* Predictive throttling
-* Adaptive AI system prompts
-* Graceful degradation
+| Metric | Value |
+|---|---|
+| Bridge CPU overhead | 0.017% at 500ms poll |
+| Parse throughput | 12,000+ lines/sec |
+| Write to callback latency | < 10ms |
+| Bridge heap footprint | < 4 KB |
+| Test suite | 133 tests, 0 failures |
 
 ---
 
-## Future Roadmap
+## APK / SDK Note
 
-* Android NDK wrapper
-* Knox-native enterprise deployment
-* Samsung Galaxy Store optimization
-* NPU-aware scheduling
-* Offline local LLM fallback
+This submission targets Samsung Galaxy Linux userspace and Windows. The Python engine runs on Android via Termux without modification. An Android NDK wrapper for the C++ engine is the planned next step.
 
 ---
 
 ## License
 
-**Apache 2.0**
-
----
+Apache 2.0
 
 ## Team
 
-**Kavya Jain (kjudr05)**
-Samsung PRISM AX Hackathon 2026
+Kavya — kjudr05 — Samsung PRISM AX Hackathon 2026

@@ -17,7 +17,8 @@ so the AI agent is never blocked waiting for telemetry.
 import re
 import time
 import os
-
+import json
+from datetime import datetime
 import threading
 import statistics
 from dataclasses import dataclass, asdict

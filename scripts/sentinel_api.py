@@ -23,7 +23,6 @@ Run: python scripts/sentinel_api.py [--port 7474] [--log PATH] [--mock SCENARIO]
 """
 
 import sys
-import os
 import json
 import time
 import threading
@@ -36,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "bridge"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "agent"))
-from sentinel_bridge import SentinelBridge, HardwareContext, ContextAnalyser
+from sentinel_bridge import SentinelBridge, HardwareContext
 from sentinel_agent import _mock_context
 
 # ─── Shared state (thread-safe) ───────────────────────────────────────────────
@@ -432,13 +431,13 @@ def main():
 
     server = make_server(args.port, state)
 
-    print(f"\n  Sentinel API Server")
-    print(f"  ───────────────────")
+    print("\n  Sentinel API Server")
+    print("  ───────────────────")
     print(f"  http://localhost:{args.port}/status")
     print(f"  http://localhost:{args.port}/mode")
     print(f"  http://localhost:{args.port}/stream  (SSE)")
     print(f"  http://localhost:{args.port}/docs")
-    print(f"\n  Ctrl+C to stop\n")
+    print("\n  Ctrl+C to stop\n")
 
     try:
         server.serve_forever()

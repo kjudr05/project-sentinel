@@ -29,8 +29,8 @@ structured hardware history across conversation turns.
 """
 
 import time
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass
+from typing import List, Optional,Dict
 from enum import Enum
 from collections import deque
 
@@ -434,7 +434,6 @@ if __name__ == "__main__":
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..","bridge"))
     from sentinel_bridge import HardwareReading, ContextAnalyser
-    from anomaly_detector import AnomalyDetector
 
     def make_ctx(ram, cpu=30, temp=55, bat=75, charging=False):
         r = HardwareReading(

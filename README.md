@@ -175,8 +175,9 @@ python scripts/sentinel_monitor.py
 
 ```bash
 python scripts/sentinel_engine_py.py          # Terminal 1: start hardware engine
-openclaw gateway --config openclaw.json       # Terminal 2: start OpenClaw
-openclaw dashboard                            # opens browser UI
+openclaw config set agents.defaults.workspace "$(pwd)/openclaw/workspace"
+openclaw gateway run                          # Terminal 2: start OpenClaw
+# Then open http://localhost:18789 in browser# opens browser UI
 ```
 
 ### Session report
